@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  sentinel-redis:
+    image: redis:alpine
+    container_name: sentinel-redis
+    ports:
+      - "6379:6379"
+    restart: always
