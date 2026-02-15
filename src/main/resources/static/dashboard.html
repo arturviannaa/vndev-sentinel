@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VNDev Sentinel | Fraud Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased">
+
+<header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="bg-blue-600 p-2 rounded-lg">
+                <i class="fas fa-shield-halved text-xl"></i>
+            </div>
+            <h1 class="text-xl font-bold tracking-tight">VNDev <span class="text-blue-500">Sentinel</span></h1>
+        </div>
+        <div class="flex items-center gap-4">
+                <span class="flex items-center gap-2 text-sm text-slate-400">
+                    <span class="relative flex h-3 w-3">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                    Live Monitoring
+                </span>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-8">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        <div class="lg:col-span-1 space-y-6">
+            <div class="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl">
+                <h2 class="text-slate-400 text-sm font-medium uppercase mb-4">Métricas de Sessão</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="text-center p-4 bg-slate-900/50 rounded-xl border border-slate-700">
+                        <p class="text-2xl font-bold text-green-500" id="count-approved">0</p>
+                        <p class="text-xs text-slate-500">Aprovadas</p>
+                    </div>
+                    <div class="text-center p-4 bg-slate-900/50 rounded-xl border border-slate-700">
+                        <p class="text-2xl font-bold text-red-500" id="count-denied">0</p>
+                        <p class="text-xs text-slate-500">Bloqueadas</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-blue-600/10 border border-blue-500/20 p-6 rounded-2xl">
+                <h3 class="text-blue-400 font-semibold mb-2 italic">Dica de Engenheiro:</h3>
+                <p class="text-sm text-blue-200/80 leading-relaxed">
+                    Este motor processa coordenadas via <b>Fórmula de Haversine</b> e analisa janelas de tempo no <b>Redis</b>.
+                </p>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2">
+            <div class="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
+                <div class="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-800/30">
+                    <h2 class="font-bold flex items-center gap-2">
+                        <i class="fas fa-list-ul text-blue-500"></i>
+                        Log de Eventos em Tempo Real
+                    </h2>
+                </div>
+
+                <div id="log-container" class="h-[600px] overflow-y-auto p-4 space-y-3 scrollbar-thin scrollbar-thumb-slate-700">
+                    <div id="waiting-msg" class="h-full flex flex-col items-center justify-center text-slate-500">
+                        <i class="fas fa-satellite-dish animate-bounce text-4xl mb-4"></i>
+                        <p>Sintonizando frequências do Sentinel...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    let approvedCount = 0;
+    let deniedCount = 0;
+
+    const socket = new SockJS('/ws-sentinel');
+    const stompClient = Stomp.over(socket);
+    stompClient.debug = null; // Remove logs chatos no console
+
+    stompClient.connect({}, function (frame) {
+        document.getElementById('waiting-msg').classList.add('hidden');
+
+        stompClient.subscribe('/topic/transactions', function (msg) {
+            const data = JSON.parse(msg.body);
+            updateStats(data.status);
+            appendLog(data);
+        });
+    });
+
+    function updateStats(status) {
+        if (status === 'APPROVED') {
+            approvedCount++;
+            document.getElementById('count-approved').innerText = approvedCount;
+        } else {
+            deniedCount++;
+            document.getElementById('count-denied').innerText = deniedCount;
+        }
+    }
+
+    function appendLog(data) {
+        const container = document.getElementById('log-container');
+        const item = document.createElement('div');
+
+        const isApproved = data.status === 'APPROVED';
+        const icon = isApproved ? 'fa-check-circle text-green-500' : 'fa-times-circle text-red-500';
+        const borderColor = isApproved ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5';
+
+        item.className = `p-4 border rounded-xl flex items-center justify-between animate-fade-in ${borderColor}`;
+        item.innerHTML = `
+                <div class="flex items-center gap-4">
+                    <i class="fas ${icon} text-2xl"></i>
+                    <div>
+                        <p class="font-bold text-sm">${data.transaction.cardToken}</p>
+                        <p class="text-xs text-slate-400">R$ ${data.transaction.amount.toFixed(2)} • ${data.transaction.merchantCategory}</p>
+                    </div>
+                </div>
+                <div class="text-right text-xs">
+                    <p class="font-medium ${isApproved ? 'text-green-400' : 'text-red-400'}">${data.status}</p>
+                    <p class="text-slate-500">${new Date().toLocaleTimeString()}</p>
+                </div>
+            `;
+
+        container.prepend(item);
+    }
+</script>
+
+<style>
+    @keyframes fade-in {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+</style>
+</body>
+</html>
